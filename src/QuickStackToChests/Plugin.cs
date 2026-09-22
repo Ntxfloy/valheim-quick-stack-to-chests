@@ -109,6 +109,11 @@ namespace QuickStackToChests
 
             if (_settingsOpen)
             {
+                if (_waitingForHotKey)
+                {
+                    TryReadSideMouseBinding();
+                }
+
                 return;
             }
 
@@ -159,7 +164,7 @@ namespace QuickStackToChests
             GUILayout.BeginHorizontal();
             GUILayout.Label("Быстрая сортировка:", GUILayout.Width(150f));
             string buttonText = _waitingForHotKey
-                ? "Нажми новую клавишу… (Esc — отмена)"
+                ? "Нажми клавишу или боковую кнопку мыши… (Esc — отмена)"
                 : HotKey.Value.ToString();
             if (GUILayout.Button(buttonText, GUILayout.Width(260f)))
             {
@@ -241,6 +246,31 @@ namespace QuickStackToChests
             Log.LogInfo($"Новая клавиша быстрого переноса: {HotKey.Value}");
             _waitingForHotKey = false;
             currentEvent.Use();
+        }
+
+        /// <summary>ЛКМ, ПКМ и колёсико намеренно не поддерживаем: только боковые кнопки.</summary>
+        private void TryReadSideMouseBinding()
+        {
+            if (Input.GetMouseButtonDown(3))
+            {
+                SetMouseHotKey(KeyCode.Mouse3);
+            }
+            else if (Input.GetMouseButtonDown(4))
+            {
+                SetMouseHotKey(KeyCode.Mouse4);
+            }
+            else if (Input.GetMouseButtonDown(5))
+            {
+                SetMouseHotKey(KeyCode.Mouse5);
+            }
+        }
+
+        private void SetMouseHotKey(KeyCode mouseButton)
+        {
+            HotKey.Value = new KeyboardShortcut(mouseButton);
+            Config.Save();
+            Log.LogInfo($"Новая клавиша быстрого переноса: {HotKey.Value}");
+            _waitingForHotKey = false;
         }
 
         private static bool IsModifierKey(KeyCode key)
