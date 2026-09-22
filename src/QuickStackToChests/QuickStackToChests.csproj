@@ -29,7 +29,8 @@
 
   <PropertyGroup>
     <ValheimManaged>$(ValheimPath)/valheim_Data/Managed</ValheimManaged>
-    <BepInExCore>$(ValheimPath)/BepInEx/core</BepInExCore>
+    <!-- Can be overridden for a compile-only build before BepInEx is installed in the game. -->
+    <BepInExCore Condition="'$(BepInExCore)' == ''">$(ValheimPath)/BepInEx/core</BepInExCore>
     <PluginsDir>$(ValheimPath)/BepInEx/plugins</PluginsDir>
   </PropertyGroup>
 

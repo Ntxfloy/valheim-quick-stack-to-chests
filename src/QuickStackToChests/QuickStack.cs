@@ -24,6 +24,13 @@ namespace QuickStackToChests
         private static readonly MethodInfo ContainerLoadMethod =
             typeof(Container).GetMethod("Load", AllInstance, null, Type.EmptyTypes, null);
 
+        // Container's network view and access check are private in Valheim 1.0.
+        private static readonly FieldInfo ContainerNViewField =
+            typeof(Container).GetField("m_nview", AllInstance);
+
+        private static readonly MethodInfo ContainerCheckAccessMethod =
+            typeof(Container).GetMethod("CheckAccess", AllInstance, null, new[] { typeof(long) }, null);
+
         private static readonly MethodInfo MoveItemToThisMethod =
             typeof(Inventory).GetMethod(
                 "MoveItemToThis", AllInstance, null,
@@ -176,7 +183,7 @@ namespace QuickStackToChests
 
         private static bool IsUsableContainer(Container container, long playerId, HashSet<string> excluded)
         {
-            ZNetView nview = container.m_nview;
+            ZNetView nview = GetContainerNView(container);
             if (nview == null || !nview.IsValid())
             {
                 return false;
@@ -199,7 +206,7 @@ namespace QuickStackToChests
             }
 
             // Приватный сундук другого игрока.
-            if (!container.CheckAccess(playerId))
+            if (!HasContainerAccess(container, playerId))
             {
                 return false;
             }
@@ -219,6 +226,45 @@ namespace QuickStackToChests
             }
 
             return true;
+        }
+
+        private static ZNetView GetContainerNView(Container container)
+        {
+            if (container == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                ZNetView nview = ContainerNViewField?.GetValue(container) as ZNetView;
+                return nview ?? container.m_rootObjectOverride ?? container.GetComponent<ZNetView>();
+            }
+            catch (Exception e)
+            {
+                QuickStackPlugin.Log.LogWarning($"Не удалось получить ZNetView сундука: {e.Message}");
+                return null;
+            }
+        }
+
+        private static bool HasContainerAccess(Container container, long playerId)
+        {
+            if (ContainerCheckAccessMethod == null)
+            {
+                // Неизвестная версия игры: проверку прав безопаснее считать неуспешной.
+                QuickStackPlugin.Log.LogWarning("Container.CheckAccess не найден; сундук пропущен.");
+                return false;
+            }
+
+            try
+            {
+                return (bool)ContainerCheckAccessMethod.Invoke(container, new object[] { playerId });
+            }
+            catch (Exception e)
+            {
+                QuickStackPlugin.Log.LogWarning($"Не удалось проверить доступ к сундуку: {e.Message}");
+                return false;
+            }
         }
 
         /// <summary>Проверка защитного круга с учётом разных сигнатур между версиями игры.</summary>
@@ -293,7 +339,7 @@ namespace QuickStackToChests
         /// <summary>Забираем владение ZDO и подтягиваем актуальное содержимое перед правкой.</summary>
         private static Inventory PrepareContainer(Container container)
         {
-            ZNetView nview = container.m_nview;
+            ZNetView nview = GetContainerNView(container);
             if (nview == null || !nview.IsValid())
             {
                 return null;
