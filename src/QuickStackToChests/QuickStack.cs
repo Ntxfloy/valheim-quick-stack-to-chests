@@ -15,6 +15,9 @@ namespace QuickStackToChests
         private const BindingFlags AllInstance =
             BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
+        private const BindingFlags AllStatic =
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+
         private static readonly MethodInfo ContainerSaveMethod =
             typeof(Container).GetMethod("Save", AllInstance, null, Type.EmptyTypes, null);
 
@@ -27,6 +30,30 @@ namespace QuickStackToChests
                 new[] { typeof(Inventory), typeof(ItemDrop.ItemData), typeof(int), typeof(int), typeof(int) },
                 null);
 
+        // В Valheim 1.0 публичный Inventory.Changed() заменён на приватный Changed(bool, bool).
+        // Резолвим оба варианта, чтобы мод собирался и работал и до, и после 1.0.
+        private static readonly MethodInfo InventoryChangedNoArgs =
+            typeof(Inventory).GetMethod("Changed", AllInstance, null, Type.EmptyTypes, null);
+
+        private static readonly MethodInfo InventoryChangedTwoArgs =
+            typeof(Inventory).GetMethod(
+                "Changed", AllInstance, null, new[] { typeof(bool), typeof(bool) }, null);
+
+        // Сигнатура PrivateArea.CheckAccess тоже менялась (3 и 4 аргумента).
+        private static readonly MethodInfo PrivateAreaCheckAccess4 =
+            typeof(PrivateArea).GetMethod(
+                "CheckAccess", AllStatic, null,
+                new[] { typeof(Vector3), typeof(float), typeof(bool), typeof(bool) }, null);
+
+        private static readonly MethodInfo PrivateAreaCheckAccess3 =
+            typeof(PrivateArea).GetMethod(
+                "CheckAccess", AllStatic, null,
+                new[] { typeof(Vector3), typeof(float), typeof(bool) }, null);
+
+        // InCutscene объявлен в Character; в 1.0 обращение через Player может быть неоднозначным.
+        private static readonly MethodInfo InCutsceneMethod =
+            typeof(Character).GetMethod("InCutscene", AllInstance, null, Type.EmptyTypes, null);
+
         private static readonly FieldInfo WorldLevelField =
             typeof(ItemDrop.ItemData).GetField("m_worldLevel", AllInstance);
 
@@ -36,7 +63,7 @@ namespace QuickStackToChests
         internal static void Run()
         {
             Player player = Player.m_localPlayer;
-            if (player == null || player.IsDead() || player.InCutscene())
+            if (player == null || player.IsDead() || IsInCutscene(player))
             {
                 return;
             }
@@ -96,7 +123,7 @@ namespace QuickStackToChests
 
             if (movedItems > 0)
             {
-                playerInventory.Changed();
+                NotifyChanged(playerInventory);
                 Message(player, $"Разложено {movedItems} шт. по {usedContainers} сундукам");
             }
             else
@@ -177,8 +204,7 @@ namespace QuickStackToChests
                 return false;
             }
 
-            if (QuickStackPlugin.RespectWards.Value &&
-                !PrivateArea.CheckAccess(container.transform.position, 0f, false, false))
+            if (QuickStackPlugin.RespectWards.Value && !CheckWardAccess(container.transform.position))
             {
                 return false;
             }
@@ -193,6 +219,47 @@ namespace QuickStackToChests
             }
 
             return true;
+        }
+
+        /// <summary>Проверка защитного круга с учётом разных сигнатур между версиями игры.</summary>
+        private static bool CheckWardAccess(Vector3 position)
+        {
+            try
+            {
+                if (PrivateAreaCheckAccess4 != null)
+                {
+                    return (bool)PrivateAreaCheckAccess4.Invoke(null, new object[] { position, 0f, false, false });
+                }
+
+                if (PrivateAreaCheckAccess3 != null)
+                {
+                    return (bool)PrivateAreaCheckAccess3.Invoke(null, new object[] { position, 0f, false });
+                }
+            }
+            catch (Exception e)
+            {
+                QuickStackPlugin.Log.LogWarning($"PrivateArea.CheckAccess недоступен: {e.Message}");
+            }
+
+            // Не смогли проверить - не блокируем работу мода.
+            return true;
+        }
+
+        private static bool IsInCutscene(Player player)
+        {
+            if (InCutsceneMethod == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                return (bool)InCutsceneMethod.Invoke(player, null);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static int GetLayerMask()
@@ -247,10 +314,39 @@ namespace QuickStackToChests
             Inventory inventory = container.GetInventory();
             if (inventory != null)
             {
-                inventory.Changed();
+                NotifyChanged(inventory);
             }
 
             Invoke(ContainerSaveMethod, container, "Container.Save");
+        }
+
+        /// <summary>
+        /// Inventory.Changed(): до 1.0 - публичный без аргументов, в 1.0 - приватный Changed(bool, bool).
+        /// </summary>
+        private static void NotifyChanged(Inventory inventory)
+        {
+            if (inventory == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (InventoryChangedNoArgs != null)
+                {
+                    InventoryChangedNoArgs.Invoke(inventory, null);
+                    return;
+                }
+
+                if (InventoryChangedTwoArgs != null)
+                {
+                    InventoryChangedTwoArgs.Invoke(inventory, new object[] { false, false });
+                }
+            }
+            catch (Exception e)
+            {
+                QuickStackPlugin.Log.LogWarning($"Inventory.Changed завершился ошибкой: {e.Message}");
+            }
         }
 
         private static void Invoke(MethodInfo method, Container container, string label)
