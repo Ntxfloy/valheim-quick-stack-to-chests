@@ -1,0 +1,95 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>QuickStackToChests</AssemblyName>
+    <RootNamespace>QuickStackToChests</RootNamespace>
+    <Product>QuickStackToChests</Product>
+    <Description>Valheim BepInEx mod: quick stack inventory into nearby chests by hotkey.</Description>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>portable</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AssemblySearchPaths>$(AssemblySearchPaths);{GAC}</AssemblySearchPaths>
+    <NoWarn>MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <!-- Путь к игре. Можно задать явно:  dotnet build -c Release -p:ValheimPath="D:\Steam\steamapps\common\Valheim"  -->
+  <PropertyGroup Condition="'$(ValheimPath)' == ''">
+    <ValheimPath Condition="Exists('C:/Program Files (x86)/Steam/steamapps/common/Valheim')">C:/Program Files (x86)/Steam/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('C:/Program Files/Steam/steamapps/common/Valheim')">C:/Program Files/Steam/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('D:/Steam/steamapps/common/Valheim')">D:/Steam/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('D:/SteamLibrary/steamapps/common/Valheim')">D:/SteamLibrary/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('E:/SteamLibrary/steamapps/common/Valheim')">E:/SteamLibrary/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('$(HOME)/.steam/steam/steamapps/common/Valheim')">$(HOME)/.steam/steam/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('$(HOME)/.local/share/Steam/steamapps/common/Valheim')">$(HOME)/.local/share/Steam/steamapps/common/Valheim</ValheimPath>
+    <ValheimPath Condition="'$(ValheimPath)' == '' And Exists('$(HOME)/Library/Application Support/Steam/steamapps/common/Valheim')">$(HOME)/Library/Application Support/Steam/steamapps/common/Valheim</ValheimPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <ValheimManaged>$(ValheimPath)/valheim_Data/Managed</ValheimManaged>
+    <BepInExCore>$(ValheimPath)/BepInEx/core</BepInExCore>
+    <PluginsDir>$(ValheimPath)/BepInEx/plugins</PluginsDir>
+  </PropertyGroup>
+
+  <Target Name="ValidateValheimPath" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(ValheimManaged)')"
+           Text="Не найдена папка '$(ValheimManaged)'. Укажите путь к игре: dotnet build -c Release -p:ValheimPath=&quot;C:\Path\To\Valheim&quot;" />
+    <Error Condition="!Exists('$(BepInExCore)/BepInEx.dll')"
+           Text="Не найден '$(BepInExCore)/BepInEx.dll'. Сначала установите BepInEx в игру и запустите её один раз." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCore)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCore)/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManaged)/assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManaged)/assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_guiutils">
+      <HintPath>$(ValheimManaged)/assembly_guiutils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManaged)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(ValheimManaged)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- dotnet build -c Release -p:DeployToGame=true  -> сразу копирует dll в BepInEx/plugins -->
+  <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(DeployToGame)' == 'true'">
+    <MakeDir Directories="$(PluginsDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(PluginsDir)" ContinueOnError="false" />
+    <Message Importance="high" Text="Скопировано: $(TargetPath) -> $(PluginsDir)" />
+  </Target>
+
+</Project>

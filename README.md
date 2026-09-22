@@ -1,2 +1,71 @@
-# valheim-quick-stack-to-chests
-Valheim BepInEx mod: hotkey quick-stack items from inventory into nearby chests (skips hotbar row)
+# QuickStackToChests
+
+Мод для **Valheim** (BepInEx 5): по одной кнопке раскидывает вещи из инвентаря по ближайшим сундукам — только туда, где такие же вещи уже лежат. Первый ряд инвентаря (хотбар с инструментами и едой) не трогается.
+
+Горячая клавиша по умолчанию: **Ctrl + Q**.
+
+## Что делает
+
+- Ищет сундуки в радиусе 12 м (настраивается), от ближнего к дальнему.
+- В каждый сундук кладёт только те предметы, которые в нём уже есть (совпадение по предмету, уровню качества и варианту).
+- Сначала добивает неполные стаки, потом кладёт остаток в свободные слоты того же сундука.
+- Пропускает: первый ряд инвентаря, экипированное, квестовые предметы, чужие приватные сундуки и сундуки под чужим вордом.
+- Корректно работает в сетевой игре: перед изменением забирает ownership ZDO, после — сохраняет содержимое сундука.
+- Клиентский мод: ставится только вам, на сервер ставить не нужно.
+
+## Установка (готовая сборка)
+
+1. Установите **BepInExPack Valheim** (denikson) и запустите игру один раз, чтобы создались папки.
+2. Положите `QuickStackToChests.dll` в `Valheim/BepInEx/plugins/`.
+3. Запустите игру. Файл настроек появится тут: `Valheim/BepInEx/config/blajion.quickstacktochests.cfg`.
+
+## Сборка из исходников
+
+Нужен [.NET SDK 6+](https://dotnet.microsoft.com/download) (или Visual Studio 2022) и установленная игра с BepInEx — ссылки берутся из вашей папки Valheim (DLL игры в репозиторий не кладутся — это запрещено лицензией).
+
+```bash
+# путь определяется автоматически для стандартных папок Steam
+dotnet build -c Release
+
+# или явно
+dotnet build -c Release -p:ValheimPath="D:\SteamLibrary\steamapps\common\Valheim"
+
+# сразу с копированием в BepInEx/plugins
+dotnet build -c Release -p:DeployToGame=true
+```
+
+Результат: `src/QuickStackToChests/bin/Release/QuickStackToChests.dll`.
+
+В Windows можно просто запустить `build.ps1`.
+
+## Настройки
+
+Файл `BepInEx/config/blajion.quickstacktochests.cfg`:
+
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `HotKey` | `Q + LeftControl` | Клавиша переноса |
+| `Radius` | `12` | Радиус поиска сундуков, метры (1–60) |
+| `SkipContainersInUse` | `true` | Пропускать открытые сейчас сундуки |
+| `RespectWards` | `true` | Уважать ворды и приватные сундуки |
+| `ExcludedContainers` | пусто | Префабы сундуков-исключений через запятую |
+| `SkipFirstRow` | `true` | Не трогать первый ряд (хотбар) |
+| `SkipEquipped` | `true` | Не трогать экипированное |
+| `IncludeNonStackable` | `false` | Переносить также оружие/броню/инструменты |
+| `FillEmptySlots` | `true` | Докладывать остаток в свободные слоты |
+| `ExcludedItems` | пусто | Предметы-исключения через запятую |
+| `ShowMessage` | `true` | Сообщение о результате на экране |
+| `VerboseLog` | `false` | Подробный лог для отладки |
+
+Примеры формата клавиши: `V`, `Q + LeftControl`, `S + LeftAlt`, `Keypad0`.
+
+## Если не работает
+
+1. Включите `VerboseLog = true` и посмотрите `BepInEx/LogOutput.log` — в нём должна быть строка `QuickStackToChests v1.0.0 загружен`.
+2. Нет строки — мод не в `BepInEx/plugins` или сам BepInEx не запущен.
+3. Ничего не переносится — проверьте, что такой же предмет уже лежит в сундуке и что он не в первом ряду инвентаря.
+4. Перенос в открытый сейчас сундук нужен — поставьте `SkipContainersInUse = false`.
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE).
