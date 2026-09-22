@@ -2,8 +2,8 @@
   "name": "QuickStackToChests",
   "version_number": "1.0.0",
   "website_url": "https://github.com/Ntxfloy/valheim-quick-stack-to-chests",
-  "description": "Hotkey quick-stack: moves matching items from your inventory into nearby chests, skipping the hotbar row.",
+  "description": "Quick-stack matching inventory items into nearby chests. Includes an in-game settings panel and English/Russian localization.",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2202"
+    "denikson-BepInExPack_Valheim-5.4.2350"
   ]
 }
