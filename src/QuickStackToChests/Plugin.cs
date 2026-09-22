@@ -91,7 +91,7 @@ namespace QuickStackToChests
                 "4. Прочее", "VerboseLog", false,
                 "Подробный лог в консоль BepInEx (для отладки).");
 
-            Log.LogInfo($"{PluginName} v{PluginVersion} загружен. Клавиша: {HotKey.Value}");
+            Log.LogInfo($"{PluginName} v{PluginVersion} loaded. Hotkey: {HotKey.Value}");
         }
 
         private void Update()
@@ -140,7 +140,7 @@ namespace QuickStackToChests
             }
             catch (System.Exception e)
             {
-                Log.LogError($"Ошибка быстрого переноса: {e}");
+                Log.LogError($"Quick stack error: {e}");
             }
         }
 
@@ -152,19 +152,20 @@ namespace QuickStackToChests
                 return;
             }
 
-            _settingsRect = GUI.Window(731942, _settingsRect, DrawSettingsWindow, "QuickStackToChests — настройки");
+            _settingsRect = GUI.Window(731942, _settingsRect, DrawSettingsWindow,
+                Translations.Text("QuickStackToChests — Settings", "QuickStackToChests — Настройки"));
         }
 
         private void DrawSettingsWindow(int windowId)
         {
             GUILayout.BeginVertical();
-            GUILayout.Label("F8 — закрыть. Настройки сохраняются сразу.");
+            GUILayout.Label(Translations.Text("F8 — close. Changes save immediately.", "F8 — закрыть. Настройки сохраняются сразу."));
             GUILayout.Space(8f);
 
             GUILayout.BeginHorizontal();
-            GUILayout.Label("Быстрая сортировка:", GUILayout.Width(150f));
+            GUILayout.Label(Translations.Text("Quick stack hotkey:", "Быстрая сортировка:"), GUILayout.Width(150f));
             string buttonText = _waitingForHotKey
-                ? "Нажми клавишу или боковую кнопку мыши… (Esc — отмена)"
+                ? Translations.Text("Press a key or side mouse button… (Esc — cancel)", "Нажми клавишу или боковую кнопку мыши… (Esc — отмена)")
                 : HotKey.Value.ToString();
             if (GUILayout.Button(buttonText, GUILayout.Width(260f)))
             {
@@ -179,7 +180,7 @@ namespace QuickStackToChests
 
             GUILayout.Space(8f);
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"Радиус сундуков: {Radius.Value:0} м", GUILayout.Width(180f));
+            GUILayout.Label(Translations.Text($"Chest radius: {Radius.Value:0} m", $"Радиус сундуков: {Radius.Value:0} м"), GUILayout.Width(180f));
             float newRadius = GUILayout.HorizontalSlider(Radius.Value, 1f, 60f, GUILayout.Width(220f));
             float roundedRadius = Mathf.Round(newRadius);
             if (!Mathf.Approximately(roundedRadius, Radius.Value))
@@ -189,15 +190,15 @@ namespace QuickStackToChests
             }
             GUILayout.EndHorizontal();
 
-            DrawToggle("Не трогать первый ряд инвентаря", SkipFirstRow);
-            DrawToggle("Не трогать экипированные вещи", SkipEquipped);
-            DrawToggle("Уважать ворды и приватные сундуки", RespectWards);
-            DrawToggle("Пропускать открытые сундуки", SkipContainersInUse);
-            DrawToggle("Класть остаток в свободные ячейки сундука", FillEmptySlots);
-            DrawToggle("Переносить оружие, броню и инструменты", IncludeNonStackable);
+            DrawToggle(Translations.Text("Skip first inventory row", "Не трогать первый ряд инвентаря"), SkipFirstRow);
+            DrawToggle(Translations.Text("Skip equipped items", "Не трогать экипированные вещи"), SkipEquipped);
+            DrawToggle(Translations.Text("Respect wards and private chests", "Уважать ворды и приватные сундуки"), RespectWards);
+            DrawToggle(Translations.Text("Skip chests currently in use", "Пропускать открытые сундуки"), SkipContainersInUse);
+            DrawToggle(Translations.Text("Fill empty slots in matching chests", "Класть остаток в свободные ячейки сундука"), FillEmptySlots);
+            DrawToggle(Translations.Text("Include weapons, armor and tools", "Переносить оружие, броню и инструменты"), IncludeNonStackable);
 
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Закрыть (F8)", GUILayout.Height(28f)))
+            if (GUILayout.Button(Translations.Text("Close (F8)", "Закрыть (F8)"), GUILayout.Height(28f)))
             {
                 _settingsOpen = false;
                 _waitingForHotKey = false;
@@ -243,7 +244,7 @@ namespace QuickStackToChests
 
             HotKey.Value = new KeyboardShortcut(currentEvent.keyCode, modifiers.ToArray());
             Config.Save();
-            Log.LogInfo($"Новая клавиша быстрого переноса: {HotKey.Value}");
+            Log.LogInfo($"New quick stack hotkey: {HotKey.Value}");
             _waitingForHotKey = false;
             currentEvent.Use();
         }
@@ -269,7 +270,7 @@ namespace QuickStackToChests
         {
             HotKey.Value = new KeyboardShortcut(mouseButton);
             Config.Save();
-            Log.LogInfo($"Новая клавиша быстрого переноса: {HotKey.Value}");
+            Log.LogInfo($"New quick stack hotkey: {HotKey.Value}");
             _waitingForHotKey = false;
         }
 

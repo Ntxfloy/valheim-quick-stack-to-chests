@@ -87,7 +87,7 @@ namespace QuickStackToChests
             List<Container> containers = FindNearbyContainers(player, excludedContainers);
             if (containers.Count == 0)
             {
-                Message(player, "Рядом нет доступных сундуков");
+                Message(player, Translations.NoNearbyChests);
                 return;
             }
 
@@ -131,11 +131,11 @@ namespace QuickStackToChests
             if (movedItems > 0)
             {
                 NotifyChanged(playerInventory);
-                Message(player, $"Разложено {movedItems} шт. по {usedContainers} сундукам");
+                Message(player, Translations.Stacked(movedItems, usedContainers));
             }
             else
             {
-                Message(player, "Нечего раскладывать");
+                Message(player, Translations.NothingToStack);
             }
         }
 
