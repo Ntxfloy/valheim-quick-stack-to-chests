@@ -33,6 +33,9 @@ namespace QuickStackToChests
         internal static ConfigEntry<bool> VerboseLog;
 
         private float _nextAllowedRun;
+        private bool _settingsOpen;
+        private bool _waitingForHotKey;
+        private Rect _settingsRect = new Rect(30f, 100f, 460f, 365f);
 
         private void Awake()
         {
@@ -98,6 +101,17 @@ namespace QuickStackToChests
                 return;
             }
 
+            if (Input.GetKeyDown(KeyCode.F8) && !Console.IsVisible() && !TextInput.IsVisible())
+            {
+                _settingsOpen = !_settingsOpen;
+                _waitingForHotKey = false;
+            }
+
+            if (_settingsOpen)
+            {
+                return;
+            }
+
             if (Time.time < _nextAllowedRun)
             {
                 return;
@@ -123,6 +137,118 @@ namespace QuickStackToChests
             {
                 Log.LogError($"Ошибка быстрого переноса: {e}");
             }
+        }
+
+        /// <summary>Небольшая встроенная панель без зависимости от сторонних модов настроек.</summary>
+        private void OnGUI()
+        {
+            if (!_settingsOpen)
+            {
+                return;
+            }
+
+            _settingsRect = GUI.Window(731942, _settingsRect, DrawSettingsWindow, "QuickStackToChests — настройки");
+        }
+
+        private void DrawSettingsWindow(int windowId)
+        {
+            GUILayout.BeginVertical();
+            GUILayout.Label("F8 — закрыть. Настройки сохраняются сразу.");
+            GUILayout.Space(8f);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("Быстрая сортировка:", GUILayout.Width(150f));
+            string buttonText = _waitingForHotKey
+                ? "Нажми новую клавишу… (Esc — отмена)"
+                : HotKey.Value.ToString();
+            if (GUILayout.Button(buttonText, GUILayout.Width(260f)))
+            {
+                _waitingForHotKey = true;
+            }
+            GUILayout.EndHorizontal();
+
+            if (_waitingForHotKey)
+            {
+                ReadNewHotKey(Event.current);
+            }
+
+            GUILayout.Space(8f);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Радиус сундуков: {Radius.Value:0} м", GUILayout.Width(180f));
+            float newRadius = GUILayout.HorizontalSlider(Radius.Value, 1f, 60f, GUILayout.Width(220f));
+            float roundedRadius = Mathf.Round(newRadius);
+            if (!Mathf.Approximately(roundedRadius, Radius.Value))
+            {
+                Radius.Value = roundedRadius;
+                Config.Save();
+            }
+            GUILayout.EndHorizontal();
+
+            DrawToggle("Не трогать первый ряд инвентаря", SkipFirstRow);
+            DrawToggle("Не трогать экипированные вещи", SkipEquipped);
+            DrawToggle("Уважать ворды и приватные сундуки", RespectWards);
+            DrawToggle("Пропускать открытые сундуки", SkipContainersInUse);
+            DrawToggle("Класть остаток в свободные ячейки сундука", FillEmptySlots);
+            DrawToggle("Переносить оружие, броню и инструменты", IncludeNonStackable);
+
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Закрыть (F8)", GUILayout.Height(28f)))
+            {
+                _settingsOpen = false;
+                _waitingForHotKey = false;
+            }
+            GUILayout.EndVertical();
+            GUI.DragWindow(new Rect(0f, 0f, 10000f, 24f));
+        }
+
+        private void DrawToggle(string label, ConfigEntry<bool> setting)
+        {
+            bool value = GUILayout.Toggle(setting.Value, label);
+            if (value != setting.Value)
+            {
+                setting.Value = value;
+                Config.Save();
+            }
+        }
+
+        private void ReadNewHotKey(Event currentEvent)
+        {
+            if (currentEvent == null || currentEvent.type != EventType.KeyDown)
+            {
+                return;
+            }
+
+            if (currentEvent.keyCode == KeyCode.Escape)
+            {
+                _waitingForHotKey = false;
+                currentEvent.Use();
+                return;
+            }
+
+            if (IsModifierKey(currentEvent.keyCode))
+            {
+                return;
+            }
+
+            var modifiers = new System.Collections.Generic.List<KeyCode>();
+            if (currentEvent.control) modifiers.Add(KeyCode.LeftControl);
+            if (currentEvent.shift) modifiers.Add(KeyCode.LeftShift);
+            if (currentEvent.alt) modifiers.Add(KeyCode.LeftAlt);
+            if (currentEvent.command) modifiers.Add(KeyCode.LeftCommand);
+
+            HotKey.Value = new KeyboardShortcut(currentEvent.keyCode, modifiers.ToArray());
+            Config.Save();
+            Log.LogInfo($"Новая клавиша быстрого переноса: {HotKey.Value}");
+            _waitingForHotKey = false;
+            currentEvent.Use();
+        }
+
+        private static bool IsModifierKey(KeyCode key)
+        {
+            return key == KeyCode.LeftControl || key == KeyCode.RightControl ||
+                   key == KeyCode.LeftShift || key == KeyCode.RightShift ||
+                   key == KeyCode.LeftAlt || key == KeyCode.RightAlt ||
+                   key == KeyCode.LeftCommand || key == KeyCode.RightCommand;
         }
 
         /// <summary>Не срабатывать, когда игрок печатает в чате/консоли или сидит в меню.</summary>
