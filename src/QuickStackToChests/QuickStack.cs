@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -55,15 +56,26 @@ namespace QuickStackToChests
         private static readonly FieldInfo WorldLevelField =
             typeof(ItemDrop.ItemData).GetField("m_worldLevel", AllInstance);
 
-        private static int _layerMask;
-        private static readonly Collider[] HitBuffer = new Collider[512];
+        // Реестр всех загруженных сетевых объектов: Dictionary<ZDO, ZNetView>.
+        // Берём через IDictionary, чтобы не зависеть от точных дженериков в разных версиях.
+        private static readonly FieldInfo ZNetSceneInstancesField =
+            typeof(ZNetScene).GetField("m_instances", AllInstance);
 
-        /// <summary>Счётчики причин, почему предмет не ушёл в сундук - без них отладка слепая.</summary>
+        /// <summary>Счётчики причин, почему сундук/предмет не подошли - без них отладка слепая.</summary>
         private sealed class Stats
         {
+            internal string ScanMode = "-";
+            internal int Scanned;
+            internal int ContainersSeen;
             internal int ContainersFound;
             internal int ContainersInUse;
             internal int ContainersNoAccess;
+            internal int ContainersNotLoaded;
+            internal int ContainersNoInventory;
+            internal int ContainersExcluded;
+            internal int ContainersOnCharacter;
+            internal float NearestDistance = float.MaxValue;
+            internal string NearestName = "-";
             internal int SkippedFirstRow;
             internal int SkippedEquipped;
             internal int SkippedNonStackable;
@@ -98,10 +110,7 @@ namespace QuickStackToChests
             List<Container> containers = FindNearbyContainers(player, excludedContainers, stats);
             if (containers.Count == 0)
             {
-                string why = stats.ContainersInUse > 0 || stats.ContainersNoAccess > 0
-                    ? $"Сундуки недоступны (открыты: {stats.ContainersInUse}, нет доступа: {stats.ContainersNoAccess})"
-                    : "Рядом нет доступных сундуков";
-                Message(player, why);
+                Message(player, BuildNoContainersMessage(stats));
                 LogSummary(stats, 0, 0);
                 return;
             }
@@ -109,7 +118,6 @@ namespace QuickStackToChests
             int movedItems = 0;
             int usedContainers = 0;
 
-            // Отбираем предметы-кандидаты один раз, с учётом фильтров и со статистикой причин.
             List<ItemDrop.ItemData> candidates = playerInventory.GetAllItems()
                 .Where(item => IsTransferable(item, excludedItems, stats))
                 .ToList();
@@ -139,12 +147,6 @@ namespace QuickStackToChests
                     movedItems += movedHere;
                     usedContainers++;
                     FinishContainer(container);
-
-                    if (QuickStackPlugin.VerboseLog.Value)
-                    {
-                        QuickStackPlugin.Log.LogInfo(
-                            $"Перенесено {movedHere} шт. в {container.name} ({container.transform.position})");
-                    }
                 }
             }
 
@@ -159,6 +161,28 @@ namespace QuickStackToChests
             }
 
             LogSummary(stats, movedItems, usedContainers);
+        }
+
+        private static string BuildNoContainersMessage(Stats stats)
+        {
+            var reasons = new List<string>();
+            if (stats.ContainersInUse > 0) reasons.Add($"открыты: {stats.ContainersInUse}");
+            if (stats.ContainersNoAccess > 0) reasons.Add($"нет доступа: {stats.ContainersNoAccess}");
+            if (stats.ContainersNotLoaded > 0) reasons.Add($"не загружены: {stats.ContainersNotLoaded}");
+            if (stats.ContainersNoInventory > 0) reasons.Add($"без инвентаря: {stats.ContainersNoInventory}");
+            if (stats.ContainersExcluded > 0) reasons.Add($"исключены: {stats.ContainersExcluded}");
+
+            if (reasons.Count > 0)
+            {
+                return "Сундуки недоступны (" + string.Join(", ", reasons.ToArray()) + ")";
+            }
+
+            if (stats.ContainersSeen > 0)
+            {
+                return $"Сундуки есть, но дальше {QuickStackPlugin.Radius.Value:0} м (ближайший: {stats.NearestDistance:0.0} м)";
+            }
+
+            return "Рядом нет доступных сундуков";
         }
 
         private static string BuildNothingMessage(Stats stats, int candidateCount, int containerCount)
@@ -197,9 +221,18 @@ namespace QuickStackToChests
             }
 
             QuickStackPlugin.Log.LogInfo(
-                $"[quickstack] сундуков: {stats.ContainersFound} (открыты: {stats.ContainersInUse}, без доступа: {stats.ContainersNoAccess}); " +
-                $"перенесено: {moved} шт. в {usedContainers}; " +
-                $"пропущено [1й ряд: {stats.SkippedFirstRow}, надето: {stats.SkippedEquipped}, не стак: {stats.SkippedNonStackable}, " +
+                $"[quickstack] поиск={stats.ScanMode}, просмотрено объектов: {stats.Scanned}, сундуков всего: {stats.ContainersSeen}, " +
+                $"годных: {stats.ContainersFound}, ближайший: {stats.NearestName} на {(stats.NearestDistance == float.MaxValue ? -1f : stats.NearestDistance):0.0} м, " +
+                $"радиус: {QuickStackPlugin.Radius.Value:0} м");
+
+            QuickStackPlugin.Log.LogInfo(
+                $"[quickstack] сундуки отклонены [открыты: {stats.ContainersInUse}, нет доступа: {stats.ContainersNoAccess}, " +
+                $"не загружены: {stats.ContainersNotLoaded}, без инвентаря: {stats.ContainersNoInventory}, " +
+                $"на персонаже: {stats.ContainersOnCharacter}, исключены: {stats.ContainersExcluded}]");
+
+            QuickStackPlugin.Log.LogInfo(
+                $"[quickstack] перенесено: {moved} шт. в {usedContainers}; " +
+                $"предметы пропущены [1й ряд: {stats.SkippedFirstRow}, надето: {stats.SkippedEquipped}, не стак: {stats.SkippedNonStackable}, " +
                 $"искл: {stats.SkippedExcluded}, квест: {stats.SkippedQuest}]; " +
                 $"без совпадения: {stats.NoMatchInChests}, сундук полный: {stats.MatchedButFull}, ошибка переноса: {stats.MoveFailed}");
 
@@ -221,6 +254,11 @@ namespace QuickStackToChests
 
         // ---------------------------------------------------------------- поиск сундуков
 
+        /// <summary>
+        /// Основной путь - обход ZNetScene.m_instances: там все загруженные сетевые объекты,
+        /// без лимита буфера и без зависимости от слоёв и коллайдеров.
+        /// Старый OverlapSphereNonAlloc на 512 шт. в плотной базе молча терял сундуки.
+        /// </summary>
         private static List<Container> FindNearbyContainers(Player player, HashSet<string> excluded, Stats stats)
         {
             var result = new List<Container>();
@@ -230,18 +268,23 @@ namespace QuickStackToChests
             float radius = QuickStackPlugin.Radius.Value;
             long playerId = player.GetPlayerID();
 
-            int count = Physics.OverlapSphereNonAlloc(center, radius, HitBuffer, GetLayerMask());
-
-            for (int i = 0; i < count; i++)
+            foreach (Container container in EnumerateContainers(stats))
             {
-                Collider collider = HitBuffer[i];
-                if (collider == null)
+                if (container == null || !seen.Add(container))
                 {
                     continue;
                 }
 
-                Container container = collider.GetComponentInParent<Container>();
-                if (container == null || !seen.Add(container))
+                stats.ContainersSeen++;
+
+                float distance = Vector3.Distance(container.transform.position, center);
+                if (distance < stats.NearestDistance)
+                {
+                    stats.NearestDistance = distance;
+                    stats.NearestName = container.name;
+                }
+
+                if (distance > radius)
                 {
                     continue;
                 }
@@ -263,22 +306,94 @@ namespace QuickStackToChests
             return result;
         }
 
+        private static IEnumerable<Container> EnumerateContainers(Stats stats)
+        {
+            var containers = new List<Container>();
+
+            // 1. Реестр сетевых объектов.
+            if (ZNetSceneInstancesField != null && ZNetScene.instance != null)
+            {
+                try
+                {
+                    if (ZNetSceneInstancesField.GetValue(ZNetScene.instance) is IDictionary instances)
+                    {
+                        foreach (object value in instances.Values)
+                        {
+                            stats.Scanned++;
+
+                            if (!(value is ZNetView nview) || nview == null)
+                            {
+                                continue;
+                            }
+
+                            Container container = nview.GetComponent<Container>() ??
+                                                  nview.GetComponentInChildren<Container>();
+
+                            if (container != null)
+                            {
+                                containers.Add(container);
+                            }
+                        }
+
+                        stats.ScanMode = "znetscene";
+                        return containers;
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning(
+                        $"Обход ZNetScene.m_instances не удался ({e.Message}), использую физику.");
+                }
+            }
+
+            // 2. Запасной путь: аллокационный OverlapSphere по всем слоям, без обрезания.
+            Player local = Player.m_localPlayer;
+            if (local != null)
+            {
+                Collider[] hits = Physics.OverlapSphere(
+                    local.transform.position, QuickStackPlugin.Radius.Value, ~0, QueryTriggerInteraction.Collide);
+
+                foreach (Collider collider in hits)
+                {
+                    stats.Scanned++;
+
+                    if (collider == null)
+                    {
+                        continue;
+                    }
+
+                    Container container = collider.GetComponentInParent<Container>();
+                    if (container != null)
+                    {
+                        containers.Add(container);
+                    }
+                }
+
+                stats.ScanMode = "physics";
+            }
+
+            return containers;
+        }
+
         private static bool IsUsableContainer(Container container, long playerId, HashSet<string> excluded, Stats stats)
         {
             ZNetView nview = container.m_nview;
             if (nview == null || !nview.IsValid())
             {
+                stats.ContainersNotLoaded++;
                 return false;
             }
 
             // Инвентарь игрока/трупа/другого персонажа - не наш случай.
-            if (container.GetComponentInParent<Player>() != null)
+            if (container.GetComponentInParent<Character>() != null)
             {
+                stats.ContainersOnCharacter++;
                 return false;
             }
 
             if (container.GetInventory() == null)
             {
+                stats.ContainersNoInventory++;
                 return false;
             }
 
@@ -306,6 +421,7 @@ namespace QuickStackToChests
                 string prefab = Utils.GetPrefabName(container.gameObject);
                 if (excluded.Contains(Normalize(prefab)) || excluded.Contains(Normalize(container.m_name)))
                 {
+                    stats.ContainersExcluded++;
                     return false;
                 }
             }
@@ -351,32 +467,6 @@ namespace QuickStackToChests
             {
                 return false;
             }
-        }
-
-        private static int GetLayerMask()
-        {
-            if (_layerMask != 0)
-            {
-                return _layerMask;
-            }
-
-            string[] names =
-            {
-                "Default", "static_solid", "Default_small", "piece", "piece_nonsolid", "vehicle", "item"
-            };
-
-            int mask = 0;
-            foreach (string name in names)
-            {
-                int layer = LayerMask.NameToLayer(name);
-                if (layer >= 0)
-                {
-                    mask |= 1 << layer;
-                }
-            }
-
-            _layerMask = mask != 0 ? mask : ~0;
-            return _layerMask;
         }
 
         // ------------------------------------------------- синхронизация сундука в сети
@@ -526,8 +616,6 @@ namespace QuickStackToChests
                 return false;
             }
 
-            // m_worldLevel строго сравниваем только по желанию: в 1.0 это поле часто различается
-            // у одинаковых на вид предметов и раньше ломало совпадения.
             if (QuickStackPlugin.StrictWorldLevelMatch.Value && WorldLevelField != null)
             {
                 object left = WorldLevelField.GetValue(a);
@@ -545,7 +633,6 @@ namespace QuickStackToChests
 
         /// <summary>
         /// Кладёт предмет в сундук ТОЛЬКО если такой же предмет там уже лежит.
-        /// Возвращает количество перенесённых штук.
         /// </summary>
         private static int StackItemIntoContainer(
             Inventory from, Inventory to, ItemDrop.ItemData item, Stats stats, Container container)
@@ -560,7 +647,6 @@ namespace QuickStackToChests
             int moved = 0;
             bool anyAttempt = false;
 
-            // 1. Сначала добиваем неполные стаки.
             var partials = to.GetAllItems()
                 .Where(existing => IsSameItem(existing, item) && existing.m_stack < existing.m_shared.m_maxStackSize)
                 .ToList();
@@ -588,13 +674,11 @@ namespace QuickStackToChests
                 }
                 else
                 {
-                    // Раньше здесь был break - один неудачный слот отменял весь перенос.
                     stats.MoveFailed++;
                     stats.FailedNames.Add(ItemLabel(item));
                 }
             }
 
-            // 2. Остаток кладём в свободные слоты того же сундука.
             if (QuickStackPlugin.FillEmptySlots.Value)
             {
                 int guard = 0;
@@ -625,7 +709,7 @@ namespace QuickStackToChests
                     moved += done;
                 }
             }
-            else if (moved == 0 && anyAttempt == false)
+            else if (moved == 0 && !anyAttempt)
             {
                 stats.MatchedButFull++;
                 stats.FullNames.Add(ItemLabel(item));
@@ -641,8 +725,7 @@ namespace QuickStackToChests
 
         /// <summary>
         /// Переносит amount штук в слот (x, y) и возвращает ФАКТИЧЕСКИ перенесённое количество.
-        /// Не верим возвращаемому bool из MoveItemToThis: на части билдов он врёт,
-        /// поэтому сверяем реальное количество в сундуке до и после.
+        /// Не верим bool из MoveItemToThis: на части билдов он врёт.
         /// </summary>
         private static int MoveStack(Inventory from, Inventory to, ItemDrop.ItemData item, int amount, int x, int y)
         {
@@ -673,7 +756,6 @@ namespace QuickStackToChests
                 }
             }
 
-            // Ванильный метод ничего не сделал - перекладываем вручную.
             if (MoveStackFallback(from, to, item, amount, x, y))
             {
                 int delta = CountByName(to, key) - before;
