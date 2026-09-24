@@ -15,7 +15,7 @@ namespace QuickStackToChests
     {
         public const string PluginGuid = "blajion.quickstacktochests";
         public const string PluginName = "QuickStackToChests";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
 
         internal static ManualLogSource Log;
 
@@ -25,17 +25,19 @@ namespace QuickStackToChests
         internal static ConfigEntry<bool> SkipEquipped;
         internal static ConfigEntry<bool> IncludeNonStackable;
         internal static ConfigEntry<bool> FillEmptySlots;
+        internal static ConfigEntry<bool> StrictWorldLevelMatch;
         internal static ConfigEntry<bool> RespectWards;
         internal static ConfigEntry<bool> SkipContainersInUse;
         internal static ConfigEntry<string> ExcludedItems;
         internal static ConfigEntry<string> ExcludedContainers;
         internal static ConfigEntry<bool> ShowMessage;
+        internal static ConfigEntry<bool> Diagnostics;
         internal static ConfigEntry<bool> VerboseLog;
 
         private float _nextAllowedRun;
         private bool _settingsOpen;
         private bool _waitingForHotKey;
-        private Rect _settingsRect = new Rect(30f, 100f, 460f, 365f);
+        private Rect _settingsRect = new Rect(30f, 100f, 460f, 420f);
 
         private void Awake()
         {
@@ -72,12 +74,16 @@ namespace QuickStackToChests
                 "Не трогать экипированные предметы.");
 
             IncludeNonStackable = Config.Bind(
-                "3. Предметы", "IncludeNonStackable", false,
+                "3. Предметы", "IncludeNonStackable", true,
                 "Переносить и нестакающиеся предметы (оружие, броня, инструменты), если такие же лежат в сундуке.");
 
             FillEmptySlots = Config.Bind(
                 "3. Предметы", "FillEmptySlots", true,
                 "Если в сундуке уже есть такой предмет, но стаки заполнены - докладывать остаток в свободные слоты этого сундука.");
+
+            StrictWorldLevelMatch = Config.Bind(
+                "3. Предметы", "StrictWorldLevelMatch", false,
+                "Строго сравнивать m_worldLevel предметов. Включать только если мод объединяет предметы разных уровней мира, которые в игре не стакаются.");
 
             ExcludedItems = Config.Bind(
                 "3. Предметы", "ExcludedItems", "",
@@ -87,9 +93,13 @@ namespace QuickStackToChests
                 "4. Прочее", "ShowMessage", true,
                 "Показывать сообщение о результате переноса на экране.");
 
+            Diagnostics = Config.Bind(
+                "4. Прочее", "Diagnostics", true,
+                "Писать в лог итог каждого нажатия: сколько найдено сундуков, сколько перенесено и почему предметы пропущены.");
+
             VerboseLog = Config.Bind(
                 "4. Прочее", "VerboseLog", false,
-                "Подробный лог в консоль BepInEx (для отладки).");
+                "Подробный лог каждого переноса по предметам и сундукам (шумно).");
 
             Log.LogInfo($"{PluginName} v{PluginVersion} loaded. Hotkey: {HotKey.Value}");
         }
@@ -196,6 +206,8 @@ namespace QuickStackToChests
             DrawToggle(Translations.Text("Skip chests currently in use", "Пропускать открытые сундуки"), SkipContainersInUse);
             DrawToggle(Translations.Text("Fill empty slots in matching chests", "Класть остаток в свободные ячейки сундука"), FillEmptySlots);
             DrawToggle(Translations.Text("Include weapons, armor and tools", "Переносить оружие, броню и инструменты"), IncludeNonStackable);
+            DrawToggle(Translations.Text("Strict world-level match", "Строгое сравнение уровня мира"), StrictWorldLevelMatch);
+            DrawToggle(Translations.Text("Log diagnostics", "Писать диагностику в лог"), Diagnostics);
 
             GUILayout.FlexibleSpace();
             if (GUILayout.Button(Translations.Text("Close (F8)", "Закрыть (F8)"), GUILayout.Height(28f)))
