@@ -26,10 +26,3 @@ Copy-Item "$PSScriptRoot\src\QuickStackToChests\bin\Release\QuickStackToChests.d
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 Compress-Archive -Path "$staging\*" -DestinationPath $zipPath
 Write-Host "Thunderstore package ready: $zipPath" -ForegroundColor Green
-
-$desktopDir = Join-Path $env:USERPROFILE "Desktop"
-if (Test-Path $desktopDir) {
-    $desktopZip = Join-Path $desktopDir "QuickStackToChests-1.2.0.zip"
-    Copy-Item $zipPath -Destination $desktopZip -Force
-    Write-Host "Desktop package ready: $desktopZip" -ForegroundColor Green
-}
