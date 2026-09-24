@@ -17,7 +17,7 @@ if ($ValheimPath) { $buildArgs += "-p:ValheimPath=$ValheimPath" }
 & $dotnetCmd @buildArgs
 
 $staging = Join-Path $OutputDirectory "thunderstore_package"
-$zipPath = Join-Path $OutputDirectory "QuickStackToChests-1.2.0.zip"
+$zipPath = Join-Path $OutputDirectory "Ntxfloy-QuickStackToChests-1.2.0.zip"
 if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 New-Item -ItemType Directory -Force -Path "$staging\BepInEx\plugins" | Out-Null
 Copy-Item "$PSScriptRoot\manifest.json", "$PSScriptRoot\README.md", "$PSScriptRoot\icon.png" -Destination $staging
