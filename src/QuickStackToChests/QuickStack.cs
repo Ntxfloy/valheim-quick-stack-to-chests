@@ -19,6 +19,9 @@ namespace QuickStackToChests
         private const BindingFlags AllStatic =
             BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
+        /// <summary>На сколько метров за радиусом ещё ищем сундуки ради диагностики "ближайший".</summary>
+        private const float DiagnosticBand = 20f;
+
         private static readonly MethodInfo ContainerSaveMethod =
             typeof(Container).GetMethod("Save", AllInstance, null, Type.EmptyTypes, null);
 
@@ -66,6 +69,7 @@ namespace QuickStackToChests
         {
             internal string ScanMode = "-";
             internal int Scanned;
+            internal int Inspected;
             internal int ContainersSeen;
             internal int ContainersFound;
             internal int ContainersInUse;
@@ -76,6 +80,7 @@ namespace QuickStackToChests
             internal int ContainersOnCharacter;
             internal float NearestDistance = float.MaxValue;
             internal string NearestName = "-";
+            internal double ScanMs;
             internal int SkippedFirstRow;
             internal int SkippedEquipped;
             internal int SkippedNonStackable;
@@ -124,6 +129,11 @@ namespace QuickStackToChests
 
             foreach (Container container in containers)
             {
+                if (candidates.All(item => item.m_stack <= 0 || !playerInventory.ContainsItem(item)))
+                {
+                    break;
+                }
+
                 Inventory containerInventory = PrepareContainer(container);
                 if (containerInventory == null)
                 {
@@ -177,7 +187,7 @@ namespace QuickStackToChests
                 return "Сундуки недоступны (" + string.Join(", ", reasons.ToArray()) + ")";
             }
 
-            if (stats.ContainersSeen > 0)
+            if (stats.NearestDistance < float.MaxValue)
             {
                 return $"Сундуки есть, но дальше {QuickStackPlugin.Radius.Value:0} м (ближайший: {stats.NearestDistance:0.0} м)";
             }
@@ -207,7 +217,7 @@ namespace QuickStackToChests
 
             if (stats.MatchedButFull > 0)
             {
-                return "Совпадения есть, но сундуки забиты";
+                return "Совпадения есть, но сундуки забиты"; 
             }
 
             return $"Нет совпадений: проверено {candidateCount} предметов в {containerCount} сундуках";
@@ -221,9 +231,9 @@ namespace QuickStackToChests
             }
 
             QuickStackPlugin.Log.LogInfo(
-                $"[quickstack] поиск={stats.ScanMode}, просмотрено объектов: {stats.Scanned}, сундуков всего: {stats.ContainersSeen}, " +
-                $"годных: {stats.ContainersFound}, ближайший: {stats.NearestName} на {(stats.NearestDistance == float.MaxValue ? -1f : stats.NearestDistance):0.0} м, " +
-                $"радиус: {QuickStackPlugin.Radius.Value:0} м");
+                $"[quickstack] поиск={stats.ScanMode} за {stats.ScanMs:0.0} мс, объектов: {stats.Scanned}, проверено близких: {stats.Inspected}, " +
+                $"сундуков: {stats.ContainersSeen}, годных: {stats.ContainersFound}, ближайший: {stats.NearestName} на " +
+                $"{(stats.NearestDistance == float.MaxValue ? -1f : stats.NearestDistance):0.0} м, радиус: {QuickStackPlugin.Radius.Value:0} м");
 
             QuickStackPlugin.Log.LogInfo(
                 $"[quickstack] сундуки отклонены [открыты: {stats.ContainersInUse}, нет доступа: {stats.ContainersNoAccess}, " +
@@ -254,11 +264,6 @@ namespace QuickStackToChests
 
         // ---------------------------------------------------------------- поиск сундуков
 
-        /// <summary>
-        /// Основной путь - обход ZNetScene.m_instances: там все загруженные сетевые объекты,
-        /// без лимита буфера и без зависимости от слоёв и коллайдеров.
-        /// Старый OverlapSphereNonAlloc на 512 шт. в плотной базе молча терял сундуки.
-        /// </summary>
         private static List<Container> FindNearbyContainers(Player player, HashSet<string> excluded, Stats stats)
         {
             var result = new List<Container>();
@@ -268,7 +273,12 @@ namespace QuickStackToChests
             float radius = QuickStackPlugin.Radius.Value;
             long playerId = player.GetPlayerID();
 
-            foreach (Container container in EnumerateContainers(stats))
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            List<Container> found = CollectContainers(center, radius, stats);
+            watch.Stop();
+            stats.ScanMs = watch.Elapsed.TotalMilliseconds;
+
+            foreach (Container container in found)
             {
                 if (container == null || !seen.Add(container))
                 {
@@ -306,11 +316,18 @@ namespace QuickStackToChests
             return result;
         }
 
-        private static IEnumerable<Container> EnumerateContainers(Stats stats)
+        /// <summary>
+        /// Основной путь - обход ZNetScene.m_instances: там все загруженные сетевые объекты,
+        /// без лимита буфера и без зависимости от слоёв и коллайдеров.
+        /// Сначала дешёвая проверка расстояния, и только потом поиск компонентов:
+        /// GetComponentInChildren обходит всю иерархию, и гонять его на каждой стене базы дорого.
+        /// </summary>
+        private static List<Container> CollectContainers(Vector3 center, float radius, Stats stats)
         {
             var containers = new List<Container>();
+            float nearSqr = radius * radius;
+            float bandSqr = (radius + DiagnosticBand) * (radius + DiagnosticBand);
 
-            // 1. Реестр сетевых объектов.
             if (ZNetSceneInstancesField != null && ZNetScene.instance != null)
             {
                 try
@@ -326,8 +343,20 @@ namespace QuickStackToChests
                                 continue;
                             }
 
-                            Container container = nview.GetComponent<Container>() ??
-                                                  nview.GetComponentInChildren<Container>();
+                            float distanceSqr = Vector3.SqrMagnitude(nview.transform.position - center);
+                            if (distanceSqr > bandSqr)
+                            {
+                                continue;
+                            }
+
+                            stats.Inspected++;
+
+                            // В радиусе - полный поиск; в диагностической полосе - только дешёвый GetComponent.
+                            Container container = nview.GetComponent<Container>();
+                            if (container == null && distanceSqr <= nearSqr)
+                            {
+                                container = nview.GetComponentInChildren<Container>();
+                            }
 
                             if (container != null)
                             {
@@ -346,32 +375,26 @@ namespace QuickStackToChests
                 }
             }
 
-            // 2. Запасной путь: аллокационный OverlapSphere по всем слоям, без обрезания.
-            Player local = Player.m_localPlayer;
-            if (local != null)
+            // Запасной путь: аллокационный OverlapSphere по всем слоям, без обрезания.
+            Collider[] hits = Physics.OverlapSphere(center, radius, ~0, QueryTriggerInteraction.Collide);
+            foreach (Collider collider in hits)
             {
-                Collider[] hits = Physics.OverlapSphere(
-                    local.transform.position, QuickStackPlugin.Radius.Value, ~0, QueryTriggerInteraction.Collide);
+                stats.Scanned++;
+                stats.Inspected++;
 
-                foreach (Collider collider in hits)
+                if (collider == null)
                 {
-                    stats.Scanned++;
-
-                    if (collider == null)
-                    {
-                        continue;
-                    }
-
-                    Container container = collider.GetComponentInParent<Container>();
-                    if (container != null)
-                    {
-                        containers.Add(container);
-                    }
+                    continue;
                 }
 
-                stats.ScanMode = "physics";
+                Container container = collider.GetComponentInParent<Container>();
+                if (container != null)
+                {
+                    containers.Add(container);
+                }
             }
 
+            stats.ScanMode = "physics";
             return containers;
         }
 
