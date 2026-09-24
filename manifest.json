@@ -1,6 +1,6 @@
 {
   "name": "QuickStackToChests",
-  "version_number": "1.0.0",
+  "version_number": "1.2.0",
   "website_url": "https://github.com/Ntxfloy/valheim-quick-stack-to-chests",
   "description": "Quick-stack matching inventory items into nearby chests. Includes an in-game settings panel and English/Russian localization.",
   "dependencies": [

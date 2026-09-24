@@ -6,7 +6,7 @@
     <RootNamespace>QuickStackToChests</RootNamespace>
     <Product>QuickStackToChests</Product>
     <Description>Valheim BepInEx mod: quick stack inventory into nearby chests by hotkey.</Description>
-    <Version>1.0.0</Version>
+    <Version>1.2.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <DebugType>portable</DebugType>
@@ -30,6 +30,9 @@
   <PropertyGroup>
     <ValheimManaged>$(ValheimPath)/valheim_Data/Managed</ValheimManaged>
     <!-- Can be overridden for a compile-only build before BepInEx is installed in the game. -->
+    <BepInExCore Condition="'$(BepInExCore)' == '' And Exists('$(ValheimPath)/BepInEx/core')">$(ValheimPath)/BepInEx/core</BepInExCore>
+    <BepInExCore Condition="'$(BepInExCore)' == '' And Exists('$(AppData)/r2modmanPlus-local/Valheim/profiles/Default/BepInEx/core')">$(AppData)/r2modmanPlus-local/Valheim/profiles/Default/BepInEx/core</BepInExCore>
+    <BepInExCore Condition="'$(BepInExCore)' == '' And Exists('$(AppData)/r2modmanPlus-local/Valheim/profiles/tre/BepInEx/core')">$(AppData)/r2modmanPlus-local/Valheim/profiles/tre/BepInEx/core</BepInExCore>
     <BepInExCore Condition="'$(BepInExCore)' == ''">$(ValheimPath)/BepInEx/core</BepInExCore>
     <PluginsDir>$(ValheimPath)/BepInEx/plugins</PluginsDir>
   </PropertyGroup>

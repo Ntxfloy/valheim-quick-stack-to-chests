@@ -15,7 +15,7 @@ namespace QuickStackToChests
     {
         public const string PluginGuid = "blajion.quickstacktochests";
         public const string PluginName = "QuickStackToChests";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "1.2.0";
 
         internal static ManualLogSource Log;
 
