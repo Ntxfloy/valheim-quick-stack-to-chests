@@ -6,8 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $dotnetCmd = "dotnet"
+$localSdk = Join-Path $env:TEMP 'valheim-dotnet-sdk\dotnet.exe'
 $localDotnet = "$env:LOCALAPPDATA\Microsoft\dotnet\dotnet.exe"
-if (Test-Path $localDotnet) {
+if (Test-Path $localSdk) {
+    $dotnetCmd = $localSdk
+} elseif (Test-Path $localDotnet) {
     $dotnetCmd = $localDotnet
 }
 
@@ -16,8 +19,10 @@ $buildArgs = @("build", $project, "-c", "Release", "-p:DeployToGame=false")
 if ($ValheimPath) { $buildArgs += "-p:ValheimPath=$ValheimPath" }
 & $dotnetCmd @buildArgs
 
+$manifest = Get-Content (Join-Path $PSScriptRoot "manifest.json") | ConvertFrom-Json
 $staging = Join-Path $OutputDirectory "thunderstore_package"
-$zipPath = Join-Path $OutputDirectory "Ntxfloy-QuickStackToChests-1.2.4.zip"
+$zipPath = Join-Path $OutputDirectory "Ntxfloy-QuickStackToChests-$($manifest.version_number).zip"
+
 if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 New-Item -ItemType Directory -Force -Path "$staging\BepInEx\plugins" | Out-Null
 Copy-Item "$PSScriptRoot\manifest.json", "$PSScriptRoot\README.md", "$PSScriptRoot\icon.png" -Destination $staging

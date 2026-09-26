@@ -15,7 +15,7 @@ namespace QuickStackToChests
     {
         public const string PluginGuid = "blajion.quickstacktochests";
         public const string PluginName = "QuickStackToChests";
-        public const string PluginVersion = "1.2.4";
+        public const string PluginVersion = "1.2.5";
 
         internal static ManualLogSource Log;
 
@@ -39,7 +39,9 @@ namespace QuickStackToChests
         private float _nextAllowedRun;
         private bool _settingsOpen;
         private bool _waitingForHotKey;
-        private Rect _settingsRect = new Rect(30f, 100f, 460f, 470f);
+        private Rect _settingsRect = new Rect(30f, 100f, 480f, 570f);
+        private string _teleportFixStatus = string.Empty;
+        private float _teleportFixStatusClearTime;
 
         private void Awake()
         {
@@ -129,6 +131,9 @@ namespace QuickStackToChests
 
             if (_settingsOpen)
             {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+
                 if (_waitingForHotKey)
                 {
                     TryReadSideMouseBinding();
@@ -171,6 +176,9 @@ namespace QuickStackToChests
             {
                 return;
             }
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
 
             _settingsRect = GUI.Window(731942, _settingsRect, DrawSettingsWindow,
                 Translations.Text("QuickStackToChests — Settings", "QuickStackToChests — Настройки"));
@@ -221,6 +229,8 @@ namespace QuickStackToChests
             DrawToggle(Translations.Text("Strict world-level match", "Строгое сравнение уровня мира"), StrictWorldLevelMatch);
             DrawToggle(Translations.Text("Log diagnostics", "Писать диагностику в лог"), Diagnostics);
 
+            DrawTeleportFixSection();
+
             GUILayout.FlexibleSpace();
             if (GUILayout.Button(Translations.Text("Close (F8)", "Закрыть (F8)"), GUILayout.Height(28f)))
             {
@@ -229,6 +239,72 @@ namespace QuickStackToChests
             }
             GUILayout.EndVertical();
             GUI.DragWindow(new Rect(0f, 0f, 10000f, 24f));
+        }
+
+        private void DrawTeleportFixSection()
+        {
+            GUILayout.Space(6f);
+            GUILayout.BeginVertical(GUI.skin.box);
+
+            bool isStuck = TeleportFixer.IsPlayerStuckInTeleport();
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(Translations.Text("Teleport recovery:", "Разбаговка портала:"), GUILayout.Width(160f));
+            if (isStuck)
+            {
+                GUI.color = new Color(1f, 0.45f, 0.45f, 1f);
+                GUILayout.Label(Translations.Text("⚠️ Teleport stuck detected!", "⚠️ Зависание в портале!"));
+                GUI.color = Color.white;
+            }
+            else
+            {
+                GUI.color = new Color(0.6f, 0.9f, 0.6f, 1f);
+                GUILayout.Label(Translations.Text("Normal (not teleporting)", "В норме (не в портале)"));
+                GUI.color = Color.white;
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+
+            GUI.color = isStuck ? new Color(0.35f, 1f, 0.45f, 1f) : Color.white;
+            if (GUILayout.Button(Translations.Text("⚡ Fix & Exit Here", "⚡ Разбаговать здесь"), GUILayout.Height(28f)))
+            {
+                if (TeleportFixer.UnstickTeleport(returnToOrigin: false))
+                {
+                    _teleportFixStatus = Translations.Text("Teleport unstick applied!", "Телепортация успешно разбагована!");
+                    _settingsOpen = false;
+                }
+                else
+                {
+                    _teleportFixStatus = Translations.Text("Player is not in teleport mode.", "Персонаж не застрял в телепортации.");
+                }
+                _teleportFixStatusClearTime = Time.time + 4f;
+            }
+
+            GUI.color = isStuck ? new Color(1f, 0.85f, 0.35f, 1f) : Color.white;
+            if (GUILayout.Button(Translations.Text("↩ Return to Source", "↩ Вернуть к источнику"), GUILayout.Height(28f)))
+            {
+                if (TeleportFixer.UnstickTeleport(returnToOrigin: true))
+                {
+                    _teleportFixStatus = Translations.Text("Returned to origin portal!", "Возвращен к исходному порталу!");
+                    _settingsOpen = false;
+                }
+                else
+                {
+                    _teleportFixStatus = Translations.Text("Player is not in teleport mode.", "Персонаж не застрял в телепортации.");
+                }
+                _teleportFixStatusClearTime = Time.time + 4f;
+            }
+            GUI.color = Color.white;
+            GUILayout.EndHorizontal();
+
+            if (!string.IsNullOrEmpty(_teleportFixStatus) && Time.time < _teleportFixStatusClearTime)
+            {
+                GUILayout.Space(2f);
+                GUILayout.Label(_teleportFixStatus);
+            }
+
+            GUILayout.EndVertical();
         }
 
         private void DrawToggle(string label, ConfigEntry<bool> setting)

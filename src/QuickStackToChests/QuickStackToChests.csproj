@@ -6,7 +6,7 @@
     <RootNamespace>QuickStackToChests</RootNamespace>
     <Product>QuickStackToChests</Product>
     <Description>Valheim BepInEx mod: quick stack inventory into nearby chests by hotkey.</Description>
-    <Version>1.2.4</Version>
+    <Version>1.2.5</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <DebugType>portable</DebugType>
@@ -91,6 +91,11 @@
       <HintPath>$(ValheimManaged)/UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
   </ItemGroup>
 
   <!-- dotnet build -c Release -p:DeployToGame=true  -> сразу копирует dll в BepInEx/plugins -->
