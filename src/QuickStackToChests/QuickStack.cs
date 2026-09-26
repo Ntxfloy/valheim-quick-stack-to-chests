@@ -90,6 +90,7 @@ namespace QuickStackToChests
             internal double ScanMs;
             internal int SkippedFirstRow;
             internal int SkippedEquipped;
+            internal int SkippedExtraSlots;
             internal int SkippedNonStackable;
             internal int SkippedExcluded;
             internal int SkippedQuest;
@@ -114,6 +115,8 @@ namespace QuickStackToChests
             {
                 return;
             }
+
+            EnsureExtraSlotsIntegration();
 
             var stats = new Stats();
             HashSet<string> excludedItems = ParseList(QuickStackPlugin.ExcludedItems.Value);
@@ -209,6 +212,7 @@ namespace QuickStackToChests
                 var skipped = new List<string>();
                 if (stats.SkippedFirstRow > 0) skipped.Add($"1-й ряд: {stats.SkippedFirstRow}");
                 if (stats.SkippedEquipped > 0) skipped.Add($"надето: {stats.SkippedEquipped}");
+                if (stats.SkippedExtraSlots > 0) skipped.Add($"экстра-слоты: {stats.SkippedExtraSlots}");
                 if (stats.SkippedNonStackable > 0) skipped.Add($"не стакается: {stats.SkippedNonStackable}");
                 if (stats.SkippedExcluded > 0) skipped.Add($"исключено: {stats.SkippedExcluded}");
 
@@ -249,7 +253,7 @@ namespace QuickStackToChests
 
             QuickStackPlugin.Log.LogInfo(
                 $"[quickstack] перенесено: {moved} шт. в {usedContainers}; " +
-                $"предметы пропущены [1й ряд: {stats.SkippedFirstRow}, надето: {stats.SkippedEquipped}, не стак: {stats.SkippedNonStackable}, " +
+                $"предметы пропущены [1й ряд: {stats.SkippedFirstRow}, надето: {stats.SkippedEquipped}, экстра-слоты: {stats.SkippedExtraSlots}, не стак: {stats.SkippedNonStackable}, " +
                 $"искл: {stats.SkippedExcluded}, квест: {stats.SkippedQuest}]; " +
                 $"без совпадения: {stats.NoMatchInChests}, сундук полный: {stats.MatchedButFull}, ошибка переноса: {stats.MoveFailed}");
 
@@ -636,6 +640,13 @@ namespace QuickStackToChests
                 return false;
             }
 
+            // Дополнительные слоты модов (ExtraSlots, QuickSlots, еда, заклинания, стрелы и т.д.)
+            if (QuickStackPlugin.IgnoreExtraSlots.Value && IsExtraSlotItem(item))
+            {
+                stats.SkippedExtraSlots++;
+                return false;
+            }
+
             if (item.m_shared.m_questItem)
             {
                 stats.SkippedQuest++;
@@ -661,6 +672,96 @@ namespace QuickStackToChests
             }
 
             return true;
+        }
+
+        private static Func<ItemDrop.ItemData, bool> _extraSlotsIsItemInSlot;
+        private static bool _extraSlotsFound;
+        private static bool _extraSlotsSearched;
+
+        private static void EnsureExtraSlotsIntegration()
+        {
+            if (_extraSlotsSearched && (_extraSlotsFound || Player.m_localPlayer != null))
+            {
+                return;
+            }
+
+            _extraSlotsSearched = true;
+            try
+            {
+                Type apiType = Type.GetType("ExtraSlots.API, ExtraSlots");
+                if (apiType == null)
+                {
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        if (string.Equals(asm.GetName().Name, "ExtraSlots", StringComparison.OrdinalIgnoreCase))
+                        {
+                            apiType = asm.GetType("ExtraSlots.API");
+                            break;
+                        }
+                    }
+                }
+
+                if (apiType != null)
+                {
+                    MethodInfo method = apiType.GetMethod(
+                        "IsItemInSlot",
+                        BindingFlags.Public | BindingFlags.Static,
+                        null,
+                        new[] { typeof(ItemDrop.ItemData) },
+                        null);
+
+                    if (method != null)
+                    {
+                        _extraSlotsIsItemInSlot = (Func<ItemDrop.ItemData, bool>)Delegate.CreateDelegate(
+                            typeof(Func<ItemDrop.ItemData, bool>), method);
+                        _extraSlotsFound = true;
+                        QuickStackPlugin.Log.LogInfo("[QuickStackToChests] Подключена интеграция с ExtraSlots: защита слотов еды, спеллов, стрел и экипировки активна.");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка привязки к ExtraSlots.API: {e.Message}");
+            }
+        }
+
+        private static bool IsExtraSlotItem(ItemDrop.ItemData item)
+        {
+            if (item == null)
+            {
+                return false;
+            }
+
+            // 1. Проверка через официальный API shudnal.ExtraSlots
+            if (_extraSlotsIsItemInSlot != null)
+            {
+                try
+                {
+                    if (_extraSlotsIsItemInSlot(item))
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // Fallback при исключении внутри внешнего мода
+                }
+            }
+
+            // 2. Проверка кастомных метаданных слотов от модов
+            if (item.m_customData != null && item.m_customData.Count > 0)
+            {
+                if (item.m_customData.ContainsKey("ExtraSlotsEquippedSlot") ||
+                    item.m_customData.ContainsKey("eaqs_slot") ||
+                    item.m_customData.ContainsKey("ExtendedInventory") ||
+                    item.m_customData.ContainsKey("QuickSlots") ||
+                    item.m_customData.ContainsKey("AzuEPI_Slot"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool IsSameItem(ItemDrop.ItemData a, ItemDrop.ItemData b)
