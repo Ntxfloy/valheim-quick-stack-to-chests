@@ -102,6 +102,13 @@ namespace QuickStackToChests
             internal readonly HashSet<string> FailedNames = new HashSet<string>();
         }
 
+        private sealed class SourceInventory
+        {
+            internal Inventory Inventory;
+            internal bool IsPlayerMain;
+            internal string Name;
+        }
+
         internal static void Run()
         {
             Player player = Player.m_localPlayer;
@@ -130,16 +137,58 @@ namespace QuickStackToChests
                 return;
             }
 
+            var sources = new List<SourceInventory>
+            {
+                new SourceInventory { Inventory = playerInventory, IsPlayerMain = true, Name = "Инвентарь" }
+            };
+
+            if (QuickStackPlugin.IncludeBackpacks.Value)
+            {
+                List<Inventory> backpackInventories = GetBackpackInventories(player, playerInventory);
+                for (int i = 0; i < backpackInventories.Count; i++)
+                {
+                    sources.Add(new SourceInventory
+                    {
+                        Inventory = backpackInventories[i],
+                        IsPlayerMain = false,
+                        Name = backpackInventories.Count == 1 ? "Рюкзак" : $"Рюкзак {i + 1}"
+                    });
+                }
+            }
+
             int movedItems = 0;
             int usedContainers = 0;
+            var touchedInventories = new HashSet<Inventory>();
 
-            List<ItemDrop.ItemData> candidates = playerInventory.GetAllItems()
-                .Where(item => IsTransferable(item, excludedItems, stats))
-                .ToList();
+            var sourceCandidates = new List<(SourceInventory Source, List<ItemDrop.ItemData> Candidates)>();
+            int totalCandidates = 0;
+
+            foreach (SourceInventory source in sources)
+            {
+                List<ItemDrop.ItemData> candidates = source.Inventory.GetAllItems()
+                    .Where(item => IsTransferable(item, excludedItems, stats, source.IsPlayerMain))
+                    .ToList();
+
+                totalCandidates += candidates.Count;
+                if (candidates.Count > 0)
+                {
+                    sourceCandidates.Add((source, candidates));
+                }
+            }
 
             foreach (Container container in containers)
             {
-                if (candidates.All(item => item.m_stack <= 0 || !playerInventory.ContainsItem(item)))
+                bool anyLeft = false;
+                foreach (var sc in sourceCandidates)
+                {
+                    if (sc.Candidates.Any(item => item.m_stack > 0 && sc.Source.Inventory.ContainsItem(item)))
+                    {
+                        anyLeft = true;
+                        break;
+                    }
+                }
+
+                if (!anyLeft)
                 {
                     break;
                 }
@@ -152,14 +201,22 @@ namespace QuickStackToChests
 
                 int movedHere = 0;
 
-                foreach (ItemDrop.ItemData item in candidates)
+                foreach (var sc in sourceCandidates)
                 {
-                    if (item.m_stack <= 0 || !playerInventory.ContainsItem(item))
+                    foreach (ItemDrop.ItemData item in sc.Candidates)
                     {
-                        continue;
-                    }
+                        if (item.m_stack <= 0 || !sc.Source.Inventory.ContainsItem(item))
+                        {
+                            continue;
+                        }
 
-                    movedHere += StackItemIntoContainer(playerInventory, containerInventory, item, stats, container);
+                        int moved = StackItemIntoContainer(sc.Source.Inventory, containerInventory, item, stats, container);
+                        if (moved > 0)
+                        {
+                            movedHere += moved;
+                            touchedInventories.Add(sc.Source.Inventory);
+                        }
+                    }
                 }
 
                 if (movedHere > 0)
@@ -172,12 +229,16 @@ namespace QuickStackToChests
 
             if (movedItems > 0)
             {
-                NotifyChanged(playerInventory);
+                foreach (Inventory inv in touchedInventories)
+                {
+                    NotifyChanged(inv);
+                }
+
                 Message(player, $"Разложено {movedItems} шт. по {usedContainers} сундукам");
             }
             else
             {
-                Message(player, BuildNothingMessage(stats, candidates.Count, containers.Count));
+                Message(player, BuildNothingMessage(stats, totalCandidates, containers.Count));
             }
 
             LogSummary(stats, movedItems, usedContainers);
@@ -620,31 +681,34 @@ namespace QuickStackToChests
 
         // ------------------------------------------------------------- отбор предметов
 
-        private static bool IsTransferable(ItemDrop.ItemData item, HashSet<string> excluded, Stats stats)
+        private static bool IsTransferable(ItemDrop.ItemData item, HashSet<string> excluded, Stats stats, bool isPlayerMain = true)
         {
             if (item == null || item.m_shared == null || item.m_stack <= 0)
             {
                 return false;
             }
 
-            if (QuickStackPlugin.SkipEquipped.Value && item.m_equipped)
+            if (isPlayerMain)
             {
-                stats.SkippedEquipped++;
-                return false;
-            }
+                if (QuickStackPlugin.SkipEquipped.Value && item.m_equipped)
+                {
+                    stats.SkippedEquipped++;
+                    return false;
+                }
 
-            // Первый ряд инвентаря = хотбар.
-            if (QuickStackPlugin.SkipFirstRow.Value && item.m_gridPos.y == 0)
-            {
-                stats.SkippedFirstRow++;
-                return false;
-            }
+                // Первый ряд инвентаря = хотбар.
+                if (QuickStackPlugin.SkipFirstRow.Value && item.m_gridPos.y == 0)
+                {
+                    stats.SkippedFirstRow++;
+                    return false;
+                }
 
-            // Дополнительные слоты модов (ExtraSlots, QuickSlots, еда, заклинания, стрелы и т.д.)
-            if (QuickStackPlugin.IgnoreExtraSlots.Value && IsExtraSlotItem(item))
-            {
-                stats.SkippedExtraSlots++;
-                return false;
+                // Дополнительные слоты модов (ExtraSlots, QuickSlots, еда, заклинания, стрелы и т.д.)
+                if (QuickStackPlugin.IgnoreExtraSlots.Value && IsExtraSlotItem(item))
+                {
+                    stats.SkippedExtraSlots++;
+                    return false;
+                }
             }
 
             if (item.m_shared.m_questItem)
@@ -762,6 +826,192 @@ namespace QuickStackToChests
             }
 
             return false;
+        }
+
+        private static Func<Inventory, IEnumerable<Inventory>> _sbGetAllBackpacks;
+        private static Func<Inventory> _sbGetEquippedBackpack;
+        private static bool _sbIntegrated;
+
+        private static Func<Player, ItemDrop.ItemData> _rfWornPack;
+        private static Func<ItemDrop.ItemData, object> _rfGetPackData;
+        private static FieldInfo _rfPackInvField;
+        private static bool _rfIntegrated;
+        private static int _backpackSearchAttempts;
+
+        private static void EnsureBackpacksIntegration()
+        {
+            if (!_sbIntegrated && _backpackSearchAttempts < 10)
+            {
+                try
+                {
+                    Type apiType = Type.GetType("Backpacks.API, Backpacks");
+                    if (apiType == null)
+                    {
+                        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                        {
+                            if (string.Equals(asm.GetName().Name, "Backpacks", StringComparison.OrdinalIgnoreCase))
+                            {
+                                apiType = asm.GetType("Backpacks.API");
+                                break;
+                            }
+                        }
+                    }
+
+                    if (apiType != null)
+                    {
+                        MethodInfo getAll = apiType.GetMethod(
+                            "GetAllBackpackInventories",
+                            BindingFlags.Public | BindingFlags.Static,
+                            null,
+                            new[] { typeof(Inventory) },
+                            null);
+
+                        if (getAll != null)
+                        {
+                            _sbGetAllBackpacks = (inv) => getAll.Invoke(null, new object[] { inv }) as IEnumerable<Inventory>;
+                        }
+
+                        MethodInfo getEquipped = apiType.GetMethod(
+                            "GetEquippedBackpackInventory",
+                            BindingFlags.Public | BindingFlags.Static,
+                            null,
+                            Type.EmptyTypes,
+                            null);
+
+                        if (getEquipped != null)
+                        {
+                            _sbGetEquippedBackpack = () => getEquipped.Invoke(null, null) as Inventory;
+                        }
+
+                        if (_sbGetAllBackpacks != null || _sbGetEquippedBackpack != null)
+                        {
+                            _sbIntegrated = true;
+                            QuickStackPlugin.Log.LogInfo("[QuickStackToChests] Подключена интеграция с Smoothbrain Backpacks: перенос предметов из рюкзаков активен.");
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка интеграции с Smoothbrain Backpacks: {e.Message}");
+                }
+            }
+
+            if (!_rfIntegrated && _backpackSearchAttempts < 10)
+            {
+                try
+                {
+                    Type packUiType = null;
+                    Type packDataType = null;
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                    {
+                        if (string.Equals(asm.GetName().Name, "ReefPacks", StringComparison.OrdinalIgnoreCase))
+                        {
+                            packUiType = asm.GetType("ReefPacks.PackUi");
+                            packDataType = asm.GetType("ReefPacks.PackData");
+                            break;
+                        }
+                    }
+
+                    if (packUiType != null && packDataType != null)
+                    {
+                        MethodInfo wornMethod = packUiType.GetMethod("WornPack", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(Player) }, null);
+                        MethodInfo getMethod = packDataType.GetMethod("Get", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(ItemDrop.ItemData) }, null);
+                        FieldInfo invField = packDataType.GetField("Inv", BindingFlags.Public | BindingFlags.Instance);
+
+                        if (wornMethod != null && getMethod != null && invField != null)
+                        {
+                            _rfWornPack = (p) => wornMethod.Invoke(null, new object[] { p }) as ItemDrop.ItemData;
+                            _rfGetPackData = (item) => getMethod.Invoke(null, new object[] { item });
+                            _rfPackInvField = invField;
+                            _rfIntegrated = true;
+                            QuickStackPlugin.Log.LogInfo("[QuickStackToChests] Подключена интеграция с ReefPacks: перенос предметов из рюкзака активен.");
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка интеграции с ReefPacks: {e.Message}");
+                }
+            }
+
+            if (!_sbIntegrated || !_rfIntegrated)
+            {
+                _backpackSearchAttempts++;
+            }
+        }
+
+        private static List<Inventory> GetBackpackInventories(Player player, Inventory playerInventory)
+        {
+            var list = new List<Inventory>();
+            var seen = new HashSet<Inventory>();
+
+            EnsureBackpacksIntegration();
+
+            // 1. Smoothbrain Backpacks
+            if (_sbGetAllBackpacks != null && playerInventory != null)
+            {
+                try
+                {
+                    var inventories = _sbGetAllBackpacks(playerInventory);
+                    if (inventories != null)
+                    {
+                        foreach (var inv in inventories)
+                        {
+                            if (inv != null && seen.Add(inv))
+                            {
+                                list.Add(inv);
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка вызова GetAllBackpackInventories: {e.Message}");
+                }
+            }
+
+            if (_sbGetEquippedBackpack != null)
+            {
+                try
+                {
+                    var equippedInv = _sbGetEquippedBackpack();
+                    if (equippedInv != null && seen.Add(equippedInv))
+                    {
+                        list.Add(equippedInv);
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка вызова GetEquippedBackpackInventory: {e.Message}");
+                }
+            }
+
+            // 2. ReefPacks
+            if (_rfWornPack != null && _rfGetPackData != null && _rfPackInvField != null && player != null)
+            {
+                try
+                {
+                    var worn = _rfWornPack(player);
+                    if (worn != null)
+                    {
+                        var packData = _rfGetPackData(worn);
+                        if (packData != null)
+                        {
+                            var inv = _rfPackInvField.GetValue(packData) as Inventory;
+                            if (inv != null && seen.Add(inv))
+                            {
+                                list.Add(inv);
+                            }
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    QuickStackPlugin.Log.LogWarning($"[QuickStackToChests] Ошибка получения инвентаря ReefPacks: {e.Message}");
+                }
+            }
+
+            return list;
         }
 
         private static bool IsSameItem(ItemDrop.ItemData a, ItemDrop.ItemData b)

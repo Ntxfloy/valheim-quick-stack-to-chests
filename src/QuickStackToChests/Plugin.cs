@@ -15,7 +15,7 @@ namespace QuickStackToChests
     {
         public const string PluginGuid = "blajion.quickstacktochests";
         public const string PluginName = "QuickStackToChests";
-        public const string PluginVersion = "1.2.3";
+        public const string PluginVersion = "1.2.4";
 
         internal static ManualLogSource Log;
 
@@ -24,6 +24,7 @@ namespace QuickStackToChests
         internal static ConfigEntry<bool> SkipFirstRow;
         internal static ConfigEntry<bool> SkipEquipped;
         internal static ConfigEntry<bool> IgnoreExtraSlots;
+        internal static ConfigEntry<bool> IncludeBackpacks;
         internal static ConfigEntry<bool> IncludeNonStackable;
         internal static ConfigEntry<bool> FillEmptySlots;
         internal static ConfigEntry<bool> StrictWorldLevelMatch;
@@ -38,7 +39,7 @@ namespace QuickStackToChests
         private float _nextAllowedRun;
         private bool _settingsOpen;
         private bool _waitingForHotKey;
-        private Rect _settingsRect = new Rect(30f, 100f, 460f, 445f);
+        private Rect _settingsRect = new Rect(30f, 100f, 460f, 470f);
 
         private void Awake()
         {
@@ -77,6 +78,10 @@ namespace QuickStackToChests
             IgnoreExtraSlots = Config.Bind(
                 "3. Предметы", "IgnoreExtraSlots", true,
                 "Не трогать предметы в дополнительных слотах модов (ExtraSlots, QuickSlots, слоты для еды, заклинаний, стрел).");
+
+            IncludeBackpacks = Config.Bind(
+                "3. Предметы", "IncludeBackpacks", true,
+                "Также переносить подходящие предметы из рюкзаков (Backpacks от Smoothbrain, ReefPacks, AdventureBackpacks).");
 
             IncludeNonStackable = Config.Bind(
                 "3. Предметы", "IncludeNonStackable", true,
@@ -208,6 +213,7 @@ namespace QuickStackToChests
             DrawToggle(Translations.Text("Skip first inventory row", "Не трогать первый ряд инвентаря"), SkipFirstRow);
             DrawToggle(Translations.Text("Skip equipped items", "Не трогать экипированные вещи"), SkipEquipped);
             DrawToggle(Translations.Text("Ignore extra slots (food, spells, ammo)", "Не трогать экстра-слоты (еда, спеллы, стрелы)"), IgnoreExtraSlots);
+            DrawToggle(Translations.Text("Include backpack inventory", "Переносить вещи из рюкзаков"), IncludeBackpacks);
             DrawToggle(Translations.Text("Respect wards and private chests", "Уважать ворды и приватные сундуки"), RespectWards);
             DrawToggle(Translations.Text("Skip chests currently in use", "Пропускать открытые сундуки"), SkipContainersInUse);
             DrawToggle(Translations.Text("Fill empty slots in matching chests", "Класть остаток в свободные ячейки сундука"), FillEmptySlots);

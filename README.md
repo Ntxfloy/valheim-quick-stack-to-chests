@@ -59,6 +59,8 @@ dotnet build -c Release -p:DeployToGame=true
 | `ExcludedContainers` | пусто | Префабы сундуков-исключений через запятую |
 | `SkipFirstRow` | `true` | Не трогать первый ряд (хотбар) |
 | `SkipEquipped` | `true` | Не трогать экипированное |
+| `IgnoreExtraSlots` | `true` | Игнорировать слоты экипировки и быстрого доступа (ExtraSlots, QuickSlots, еда, заклинания) |
+| `IncludeBackpacks` | `true` | Также переносить предметы из рюкзаков (Smoothbrain Backpacks, ReefPacks) |
 | `IncludeNonStackable` | `false` | Переносить также оружие/броню/инструменты |
 | `FillEmptySlots` | `true` | Докладывать остаток в свободные слоты |
 | `ExcludedItems` | пусто | Предметы-исключения через запятую |
